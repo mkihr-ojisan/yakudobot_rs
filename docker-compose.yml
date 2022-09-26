@@ -3,6 +3,7 @@ services:
     build: .
     env_file:
       - .env
+    restart: always
   db:
     image: mysql:8.0.30
     env_file:
@@ -12,5 +13,6 @@ services:
     ports:
       - "3306:3306"
     container_name: yakudobot_db
+    restart: always
 volumes:
   db_data:
