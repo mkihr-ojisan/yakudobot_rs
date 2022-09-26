@@ -7,6 +7,8 @@ pub struct Twitter {
 }
 impl Twitter {
     pub async fn new() -> anyhow::Result<Twitter> {
+        trace!("initializing twitter client...");
+
         let consumer_key = std::env::var("CONSUMER_KEY").context("CONSUMER_KEY is not set")?;
         let consumer_secret =
             std::env::var("CONSUMER_SECRET").context("CONSUMER_SECRET is not set")?;
@@ -19,7 +21,10 @@ impl Twitter {
             access: KeyPair::new(access_token_key, access_token_secret),
         };
 
+        trace!("verifying tokens...");
         let user = egg_mode::auth::verify_tokens(&token).await?;
+        trace!("tokens verified");
+        trace!("user: {:?}", user);
 
         Ok(Twitter {
             token,

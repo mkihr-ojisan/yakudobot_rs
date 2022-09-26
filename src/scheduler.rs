@@ -65,11 +65,15 @@ async fn log_error(future: impl std::future::Future<Output = anyhow::Result<()>>
 }
 
 async fn hourly_report(twitter: Arc<Twitter>) -> anyhow::Result<()> {
+    trace!("hourly report started");
+
     let count = yakudo_score::Entity::find()
         .filter(yakudo_score::Column::Date.gt(chrono::Local::now().date().and_hms(0, 0, 0)))
         .count(get_db().await?)
         .await
         .context("failed to count yakudos")?;
+
+    trace!("count: {}", count);
 
     let message = if count == 0 {
         format!(
@@ -84,6 +88,8 @@ async fn hourly_report(twitter: Arc<Twitter>) -> anyhow::Result<()> {
         )
     };
 
+    trace!("message: {}", message);
+
     DraftTweet::new(message)
         .send(twitter.token())
         .await
@@ -93,12 +99,16 @@ async fn hourly_report(twitter: Arc<Twitter>) -> anyhow::Result<()> {
 }
 
 async fn daily_report(twitter: Arc<Twitter>) -> anyhow::Result<()> {
+    trace!("daily report started");
+
     let yakudos = yakudo_score::Entity::find()
         .filter(yakudo_score::Column::Date.gt(chrono::Local::now().date().and_hms(0, 0, 0)))
         .order_by_desc(yakudo_score::Column::Score)
         .all(get_db().await?)
         .await
         .context("failed to get yakudos")?;
+
+    trace!("yakudos: {:?}", yakudos);
 
     let message = if let Some(best_yakudo) = yakudos.first() {
         if best_yakudo.score > 0.0 {
@@ -113,6 +123,8 @@ async fn daily_report(twitter: Arc<Twitter>) -> anyhow::Result<()> {
         "本日のyakudoは...何一つ...出ませんでした...".to_string()
     };
 
+    trace!("message: {}", message);
+
     DraftTweet::new(message)
         .send(twitter.token())
         .await
@@ -122,17 +134,28 @@ async fn daily_report(twitter: Arc<Twitter>) -> anyhow::Result<()> {
 }
 
 async fn destroy_deleted_tweets(twitter: Arc<Twitter>) -> anyhow::Result<()> {
+    trace!("destroy deleted tweets started");
+
     let yakudos = yakudo_score::Entity::find()
         .filter(yakudo_score::Column::Date.gt(chrono::Local::now().date().and_hms(0, 0, 0)))
         .all(get_db().await?)
         .await
         .context("failed to get yakudos")?;
 
+    trace!("yakudos: {:?}", yakudos);
+
     for yakudo in yakudos {
+        trace!("checking tweet: {}", yakudo.tweet_id);
+
         if egg_mode::tweet::show(yakudo.tweet_id, twitter.token())
             .await
             .is_err()
         {
+            trace!(
+                "failed to get tweet {}. deleting retweet and database record...",
+                yakudo.tweet_id
+            );
+
             egg_mode::tweet::delete(yakudo.retweet_id, twitter.token())
                 .await
                 .context("failed to delete tweet")?;
@@ -140,6 +163,8 @@ async fn destroy_deleted_tweets(twitter: Arc<Twitter>) -> anyhow::Result<()> {
                 .exec(get_db().await?)
                 .await
                 .context("failed to delete entity")?;
+
+            trace!("deleted");
         }
         sleep(Duration::from_secs(1)).await;
     }

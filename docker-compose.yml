@@ -3,3 +3,7 @@ services:
     build: .
     env_file:
       - .env
+    volumes:
+      - db:/db
+volumes:
+  db:

@@ -11,16 +11,25 @@ use migration::sea_orm::{ActiveModelTrait, ActiveValue};
 use opencv::prelude::*;
 use tokio_stream::StreamExt;
 
+#[cfg(debug_assertions)]
 const SEARCH_KEYWORDS: [&str; 1] = ["#mis1yakudotest"];
+#[cfg(not(debug_assertions))]
+const SEARCH_KEYWORDS: [&str; 1] = ["#mis1yakudo"];
 
 pub async fn monitor_tweets(twitter: Arc<Twitter>) -> anyhow::Result<()> {
     let mut stream = egg_mode::stream::filter()
         .filter_level(FilterLevel::None)
         .track(SEARCH_KEYWORDS)
         .start(twitter.token());
+    info!(
+        "Start monitoring tweets with keywords: {:?}",
+        SEARCH_KEYWORDS
+    );
+
     while let Some(next) = stream.next().await {
         match next {
             Ok(StreamMessage::Tweet(tweet)) => {
+                trace!("tweet: {:?}", tweet);
                 let twitter = twitter.clone();
                 tokio::spawn(process_tweet(twitter, tweet));
             }
@@ -41,6 +50,7 @@ async fn process_tweet(twitter: Arc<Twitter>, tweet: Tweet) -> anyhow::Result<()
             .iter()
             .any(|keyword| !tweet.text.contains(keyword))
     {
+        trace!("tweet does not match the conditions. skipping...");
         return Ok(());
     }
 
@@ -48,8 +58,6 @@ async fn process_tweet(twitter: Arc<Twitter>, tweet: Tweet) -> anyhow::Result<()
         "https://twitter.com/{}/status/{}",
         tweet_user.screen_name, tweet.id
     );
-
-    info!("tweet: {}", tweet_url);
 
     let mut message = String::new();
     message.push_str(&chrono::Local::now().format("%Y-%m-%d %H:%M").to_string());
@@ -68,13 +76,22 @@ async fn process_tweet(twitter: Arc<Twitter>, tweet: Tweet) -> anyhow::Result<()
                 message.push_str("やめろ！クソ動画を投稿するんじゃない!\nScore:-inf\n");
                 yakudo_score = 0.0;
                 is_photo = false;
+                trace!("video found in tweet. aborting...");
                 break;
             }
+
+            trace!(
+                "calculating yakudo score for image: {}",
+                image.media_url_https
+            );
+
             let score = calc_yakudo_score(&image.media_url_https).await?;
             final_score += score;
             count += 1;
             message.push_str(&format!("{}枚目:{:.3}\n", count, score));
             yakudo_score = score;
+
+            trace!("calculated yakudo score for photo {}: {}", count, score);
         }
         if is_photo {
             final_score /= count as f64;
@@ -86,12 +103,15 @@ async fn process_tweet(twitter: Arc<Twitter>, tweet: Tweet) -> anyhow::Result<()
             message.push_str(&format!("Score:{:.3}\n", final_score));
         }
     } else {
-        message.push_str("画像が入ってないやん!\nScore:-inf\n")
+        message.push_str("画像が入ってないやん!\nScore:-inf\n");
+        trace!("no photo found in tweet. aborting...");
     }
 
     info!("score: {}", yakudo_score);
 
     message.push_str(&tweet_url);
+
+    trace!("tweeting: {}", message);
 
     let response = DraftTweet::new(message).send(twitter.token()).await?;
 
@@ -103,6 +123,8 @@ async fn process_tweet(twitter: Arc<Twitter>, tweet: Tweet) -> anyhow::Result<()
         date: ActiveValue::Set(chrono::Local::now()),
         ..Default::default()
     };
+    trace!("yakudo_score entity: {:#?}", yakudo_score_entity);
+
     yakudo_score_entity.insert(get_db().await?).await?;
 
     Ok(())
