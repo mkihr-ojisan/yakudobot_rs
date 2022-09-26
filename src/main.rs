@@ -28,11 +28,9 @@ async fn main() {
     let twitter = Arc::new(twitter);
 
     let twitter_clone = twitter.clone();
-    tokio::spawn(async move {
-        if let Err(err) = start_scheduler(twitter_clone).await {
-            error!("failed to start scheduler: {}", err);
-        }
-    });
+    if let Err(err) = start_scheduler(twitter_clone).await {
+        error!("failed to start scheduler: {}", err);
+    }
 
     if let Err(err) = monitor::monitor_tweets(twitter).await {
         error!("failed to monitor tweets: {}", err);

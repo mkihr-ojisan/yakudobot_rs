@@ -3,7 +3,14 @@ services:
     build: .
     env_file:
       - .env
-    volumes:
-      - db:/db
-volumes:
   db:
+    image: mysql:8.0.30
+    env_file:
+      - .env
+    volumes:
+      - db_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    container_name: yakudobot_db
+volumes:
+  db_data:

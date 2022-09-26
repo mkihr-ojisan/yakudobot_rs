@@ -19,8 +19,16 @@ impl MigrationTrait for Migration {
                             .primary_key(),
                     )
                     .col(ColumnDef::new(YakudoScores::Username).string().not_null())
-                    .col(ColumnDef::new(YakudoScores::TweetId).integer().not_null())
-                    .col(ColumnDef::new(YakudoScores::RetweetId).integer().not_null())
+                    .col(
+                        ColumnDef::new(YakudoScores::TweetId)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(YakudoScores::RetweetId)
+                            .big_integer()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(YakudoScores::Score).double().not_null())
                     .col(ColumnDef::new(YakudoScores::Date).timestamp().not_null())
                     .to_owned(),

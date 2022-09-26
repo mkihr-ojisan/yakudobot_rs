@@ -29,7 +29,6 @@ pub async fn monitor_tweets(twitter: Arc<Twitter>) -> anyhow::Result<()> {
     while let Some(next) = stream.next().await {
         match next {
             Ok(StreamMessage::Tweet(tweet)) => {
-                trace!("tweet: {:?}", tweet);
                 let twitter = twitter.clone();
                 tokio::spawn(process_tweet(twitter, tweet));
             }
@@ -43,6 +42,11 @@ pub async fn monitor_tweets(twitter: Arc<Twitter>) -> anyhow::Result<()> {
 
 async fn process_tweet(twitter: Arc<Twitter>, tweet: Tweet) -> anyhow::Result<()> {
     let tweet_user = tweet.user.as_ref().unwrap();
+    let tweet_url = format!(
+        "https://twitter.com/{}/status/{}",
+        tweet_user.screen_name, tweet.id
+    );
+    trace!("tweet: {}", tweet_url);
 
     if tweet_user.screen_name == twitter.screen_name()
         || tweet.retweeted_status.is_some()
@@ -54,10 +58,7 @@ async fn process_tweet(twitter: Arc<Twitter>, tweet: Tweet) -> anyhow::Result<()
         return Ok(());
     }
 
-    let tweet_url = format!(
-        "https://twitter.com/{}/status/{}",
-        tweet_user.screen_name, tweet.id
-    );
+    trace!("tweet: {:?}", tweet);
 
     let mut message = String::new();
     message.push_str(&chrono::Local::now().format("%Y-%m-%d %H:%M").to_string());
@@ -127,6 +128,7 @@ async fn process_tweet(twitter: Arc<Twitter>, tweet: Tweet) -> anyhow::Result<()
 
     yakudo_score_entity.insert(get_db().await?).await?;
 
+    trace!("finished processing tweet {}", tweet_url);
     Ok(())
 }
 

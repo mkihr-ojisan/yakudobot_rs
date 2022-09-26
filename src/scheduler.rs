@@ -2,13 +2,13 @@ use anyhow::Context;
 use egg_mode::tweet::DraftTweet;
 use sea_orm::{prelude::*, QueryOrder};
 use std::{sync::Arc, time::Duration};
-use tokio::time::sleep;
+use tokio::{signal::unix::SignalKind, time::sleep};
 use tokio_cron_scheduler::{Job, JobScheduler};
 
 use crate::{database::get_db, entity::yakudo_score, twitter::Twitter};
 
 pub async fn start_scheduler(twitter: Arc<Twitter>) -> anyhow::Result<()> {
-    let sched = JobScheduler::new()
+    let mut sched = JobScheduler::new()
         .await
         .context("failed to create scheduler")?;
 
@@ -54,7 +54,19 @@ pub async fn start_scheduler(twitter: Arc<Twitter>) -> anyhow::Result<()> {
         .await
         .context("failed to register scheduler job")?;
 
+    sched.shutdown_on_signal(SignalKind::terminate());
+
     sched.start().await.context("failed to start scheduler")?;
+
+    trace!(
+        "{}",
+        sched
+            .time_till_next_job()
+            .await
+            .unwrap()
+            .unwrap()
+            .as_millis()
+    );
     Ok(())
 }
 
