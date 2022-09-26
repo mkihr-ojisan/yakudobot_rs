@@ -18,7 +18,7 @@ async fn main() {
     let twitter = match twitter::Twitter::new().await {
         Ok(twitter) => twitter,
         Err(e) => {
-            error!("failed to initialize twitter client: {}", e);
+            error!("failed to initialize twitter client: {:#}", e);
             std::process::exit(1);
         }
     };
@@ -29,11 +29,11 @@ async fn main() {
 
     let twitter_clone = twitter.clone();
     if let Err(err) = start_scheduler(twitter_clone).await {
-        error!("failed to start scheduler: {}", err);
+        error!("failed to start scheduler: {:#}", err);
     }
 
     if let Err(err) = monitor::monitor_tweets(twitter).await {
-        error!("failed to monitor tweets: {}", err);
+        error!("failed to monitor tweets: {:#}", err);
         std::process::exit(1);
     }
 }
