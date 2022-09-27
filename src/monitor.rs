@@ -17,27 +17,30 @@ const SEARCH_KEYWORDS: [&str; 1] = ["#mis1yakudotest"];
 const SEARCH_KEYWORDS: [&str; 1] = ["#mis1yakudo"];
 
 pub async fn monitor_tweets(twitter: Arc<Twitter>) -> anyhow::Result<()> {
-    let mut stream = egg_mode::stream::filter()
-        .filter_level(FilterLevel::None)
-        .track(SEARCH_KEYWORDS)
-        .start(twitter.token());
-    info!(
-        "Start monitoring tweets with keywords: {:?}",
-        SEARCH_KEYWORDS
-    );
+    'retry: loop {
+        let mut stream = egg_mode::stream::filter()
+            .filter_level(FilterLevel::None)
+            .track(SEARCH_KEYWORDS)
+            .start(twitter.token());
+        info!(
+            "Start monitoring tweets with keywords: {:?}",
+            SEARCH_KEYWORDS
+        );
 
-    while let Some(next) = stream.next().await {
-        match next {
-            Ok(StreamMessage::Tweet(tweet)) => {
-                let twitter = twitter.clone();
-                tokio::spawn(process_tweet(twitter, tweet));
+        while let Some(next) = stream.next().await {
+            match next {
+                Ok(StreamMessage::Tweet(tweet)) => {
+                    let twitter = twitter.clone();
+                    tokio::spawn(process_tweet(twitter, tweet));
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    warn!("error while streaming tweets: {}. retrying...", e);
+                    continue 'retry;
+                }
             }
-            Ok(_) => {}
-            Err(e) => warn!("error while streaming tweets: {}", e),
         }
     }
-
-    Ok(())
 }
 
 async fn process_tweet(twitter: Arc<Twitter>, tweet: Tweet) -> anyhow::Result<()> {
