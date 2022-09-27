@@ -21,12 +21,12 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(YakudoScores::Username).string().not_null())
                     .col(
                         ColumnDef::new(YakudoScores::TweetId)
-                            .big_integer()
+                            .big_unsigned()
                             .not_null(),
                     )
                     .col(
                         ColumnDef::new(YakudoScores::RetweetId)
-                            .big_integer()
+                            .big_unsigned()
                             .not_null(),
                     )
                     .col(ColumnDef::new(YakudoScores::Score).double().not_null())
