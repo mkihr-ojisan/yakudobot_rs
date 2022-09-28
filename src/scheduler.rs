@@ -1,72 +1,101 @@
 use anyhow::Context;
+use chrono::Timelike;
 use egg_mode::tweet::DraftTweet;
 use sea_orm::{prelude::*, QueryOrder};
-use std::{sync::Arc, time::Duration};
-use tokio::{signal::unix::SignalKind, time::sleep};
-use tokio_cron_scheduler::{Job, JobScheduler};
+use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
+use tokio::time::sleep;
 
 use crate::{database::get_db, entity::yakudo_score, twitter::Twitter};
 
+pub struct Job {
+    hour: Option<u32>,
+    minute: Option<u32>,
+    job: Box<dyn FnMut() -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> + Send + Sync>,
+}
+impl Job {
+    pub fn new(
+        hour: impl Into<Option<u32>>,
+        minute: impl Into<Option<u32>>,
+        job: impl FnMut() -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            hour: hour.into(),
+            minute: minute.into(),
+            job: Box::new(job),
+        }
+    }
+}
+pub struct Scheduler {
+    jobs: Vec<Job>,
+}
+impl Scheduler {
+    pub fn new() -> Self {
+        Self { jobs: vec![] }
+    }
+    pub fn add(&mut self, job: Job) {
+        self.jobs.push(job);
+    }
+    pub fn start(self) {
+        tokio::spawn(async move {
+            let mut jobs = self.jobs;
+
+            loop {
+                let now = chrono::Local::now();
+                sleep(Duration::from_millis(
+                    (now.with_minute(now.minute() + 1)
+                        .unwrap()
+                        .with_second(0)
+                        .unwrap()
+                        - now)
+                        .num_milliseconds() as u64,
+                ))
+                .await;
+
+                let now = chrono::Local::now();
+                for job in &mut jobs {
+                    if job.hour.map(|hour| hour == now.hour()).unwrap_or(true)
+                        && job
+                            .minute
+                            .map(|minute| minute == now.minute())
+                            .unwrap_or(true)
+                    {
+                        tokio::spawn((job.job)());
+                    }
+                }
+            }
+        });
+    }
+}
+
 pub async fn start_scheduler(twitter: Arc<Twitter>) -> anyhow::Result<()> {
-    let mut sched = JobScheduler::new()
-        .await
-        .context("failed to create scheduler")?;
+    let mut sched = Scheduler::new();
 
     let twitter_clone = twitter.clone();
-    sched
-        .add(
-            Job::new_async("0 0 * * * * *", move |_, _| {
-                let twitter = twitter_clone.clone();
-                Box::pin(async move {
-                    log_error(hourly_report(twitter)).await;
-                })
-            })
-            .context("failed to register scheduler job")?,
-        )
-        .await
-        .context("failed to register scheduler job")?;
+    sched.add(Job::new(None, 0, move || {
+        let twitter = twitter_clone.clone();
+        Box::pin(async move {
+            log_error(hourly_report(twitter)).await;
+        })
+    }));
 
     let twitter_clone = twitter.clone();
-    sched
-        .add(
-            Job::new_async("0 59 23 * * * *", move |_, _| {
-                let twitter = twitter_clone.clone();
-                Box::pin(async move {
-                    log_error(daily_report(twitter)).await;
-                })
-            })
-            .context("failed to register scheduler job")?,
-        )
-        .await
-        .context("failed to register scheduler job")?;
+    sched.add(Job::new(23, 59, move || {
+        let twitter = twitter_clone.clone();
+        Box::pin(async move {
+            log_error(daily_report(twitter)).await;
+        })
+    }));
 
-    let twitter_clone = twitter.clone();
-    sched
-        .add(
-            Job::new_async("0 50 * * * * *", move |_, _| {
-                let twitter = twitter_clone.clone();
-                Box::pin(async move {
-                    log_error(destroy_deleted_tweets(twitter)).await;
-                })
-            })
-            .context("failed to register scheduler job")?,
-        )
-        .await
-        .context("failed to register scheduler job")?;
+    let twitter_clone = twitter;
+    sched.add(Job::new(None, 50, move || {
+        let twitter = twitter_clone.clone();
+        Box::pin(async move {
+            log_error(destroy_deleted_tweets(twitter)).await;
+        })
+    }));
 
-    sched.shutdown_on_signal(SignalKind::terminate());
+    sched.start();
 
-    sched.start().await.context("failed to start scheduler")?;
-
-    trace!(
-        "{}",
-        sched
-            .time_till_next_job()
-            .await
-            .unwrap()
-            .unwrap()
-            .as_millis()
-    );
     Ok(())
 }
 
