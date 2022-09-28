@@ -2,7 +2,7 @@ use anyhow::Context;
 use chrono::Timelike;
 use egg_mode::tweet::DraftTweet;
 use sea_orm::{prelude::*, QueryOrder};
-use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
+use std::{future::Future, ops::Add, pin::Pin, sync::Arc, time::Duration};
 use tokio::time::sleep;
 
 use crate::{database::get_db, entity::yakudo_score, twitter::Twitter};
@@ -42,8 +42,7 @@ impl Scheduler {
             loop {
                 let now = chrono::Local::now();
                 sleep(Duration::from_millis(
-                    (now.with_minute(now.minute() + 1)
-                        .unwrap()
+                    (now.add(chrono::Duration::minutes(1))
                         .with_second(0)
                         .unwrap()
                         - now)
