@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use crate::{database::get_db, entity, twitter::Twitter};
 use anyhow::Context;
@@ -9,6 +9,7 @@ use egg_mode::{
 };
 use migration::sea_orm::{ActiveModelTrait, ActiveValue};
 use opencv::prelude::*;
+use tokio::time::sleep;
 use tokio_stream::StreamExt;
 
 #[cfg(debug_assertions)]
@@ -36,6 +37,7 @@ pub async fn monitor_tweets(twitter: Arc<Twitter>) -> anyhow::Result<()> {
                 Ok(_) => {}
                 Err(e) => {
                     warn!("error while streaming tweets: {}. retrying...", e);
+                    sleep(Duration::from_secs(5)).await;
                     continue 'retry;
                 }
             }
