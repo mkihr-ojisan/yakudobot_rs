@@ -5,7 +5,7 @@ use anyhow::Context;
 use egg_mode::{
     entities::MediaType,
     stream::{FilterLevel, StreamMessage},
-    tweet::{DraftTweet, Tweet},
+    tweet::{self, DraftTweet, Tweet},
 };
 use migration::sea_orm::{ActiveModelTrait, ActiveValue};
 use opencv::prelude::*;
@@ -45,7 +45,15 @@ pub async fn monitor_tweets(twitter: Arc<Twitter>) -> anyhow::Result<()> {
     }
 }
 
+#[async_recursion::async_recursion]
 async fn process_tweet(twitter: Arc<Twitter>, tweet: Tweet) -> anyhow::Result<()> {
+    if let Some(reply_to) = &tweet.in_reply_to_status_id {
+        let tweet = tweet::show(*reply_to, twitter.token())
+            .await
+            .context("failed to get the tweet that this tweet is replying to")?;
+        return process_tweet(twitter, tweet.response).await;
+    }
+
     let tweet_user = tweet.user.as_ref().unwrap();
     let tweet_url = format!(
         "https://twitter.com/{}/status/{}",
@@ -53,12 +61,7 @@ async fn process_tweet(twitter: Arc<Twitter>, tweet: Tweet) -> anyhow::Result<()
     );
     trace!("tweet: {}", tweet_url);
 
-    if tweet_user.screen_name == twitter.screen_name()
-        || tweet.retweeted_status.is_some()
-        || SEARCH_KEYWORDS
-            .iter()
-            .any(|keyword| !tweet.text.contains(keyword))
-    {
+    if tweet_user.screen_name == twitter.screen_name() || tweet.retweeted_status.is_some() {
         trace!("tweet does not match the conditions. skipping...");
         return Ok(());
     }
