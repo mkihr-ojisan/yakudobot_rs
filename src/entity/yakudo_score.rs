@@ -6,8 +6,8 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
     pub username: String,
-    pub tweet_id: u64,
-    pub retweet_id: u64,
+    pub note_id: String,
+    pub quote_id: String,
     pub score: f64,
     pub date: chrono::DateTime<chrono::Local>,
 }

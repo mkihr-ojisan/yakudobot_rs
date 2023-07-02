@@ -7,33 +7,31 @@ extern crate log;
 
 mod database;
 mod entity;
+mod misskey;
 mod monitor;
 mod scheduler;
-mod twitter;
 
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
 
-    let twitter = match twitter::Twitter::new().await {
-        Ok(twitter) => twitter,
+    let misskey = match misskey::Misskey::new().await {
+        Ok(misskey) => misskey,
         Err(e) => {
-            error!("failed to initialize twitter client: {:#}", e);
+            error!("failed to initialize misskey client: {:#}", e);
             std::process::exit(1);
         }
     };
 
-    info!("screen_name: {}", twitter.screen_name());
+    let misskey = Arc::new(misskey);
 
-    let twitter = Arc::new(twitter);
-
-    let twitter_clone = twitter.clone();
-    if let Err(err) = start_scheduler(twitter_clone).await {
+    let misskey_clone = misskey.clone();
+    if let Err(err) = start_scheduler(misskey_clone).await {
         error!("failed to start scheduler: {:#}", err);
     }
 
-    if let Err(err) = monitor::monitor_tweets(twitter).await {
-        error!("failed to monitor tweets: {:#}", err);
+    if let Err(err) = monitor::monitor_notes(misskey).await {
+        error!("failed to monitor notes: {:#}", err);
         std::process::exit(1);
     }
 }

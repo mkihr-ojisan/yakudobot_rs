@@ -11,16 +11,16 @@ static DB: OnceCell<DatabaseConnection> = OnceCell::new();
 pub async fn get_db() -> anyhow::Result<&'static DatabaseConnection> {
     DB.get_or_try_init(async {
         for i in 0..10 {
-            trace!("connecting to database...(try {}/10)", i + 1);
+            info!("connecting to database...(try {}/10)", i + 1);
 
             match Database::connect(&std::env::var("DATABASE_URL")?).await {
                 Ok(db) => {
-                    trace!("connected to database");
-                    trace!("running database migrations...");
+                    info!("connected to database");
+                    info!("running database migrations...");
                     Migrator::up(&db, None)
                         .await
                         .context("failed to migrate database")?;
-                    trace!("database migrations completed");
+                    info!("database migrations completed");
                     return Ok(db);
                 }
                 Err(e) => {

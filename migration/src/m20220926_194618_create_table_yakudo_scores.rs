@@ -19,16 +19,8 @@ impl MigrationTrait for Migration {
                             .primary_key(),
                     )
                     .col(ColumnDef::new(YakudoScores::Username).string().not_null())
-                    .col(
-                        ColumnDef::new(YakudoScores::TweetId)
-                            .big_unsigned()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(YakudoScores::RetweetId)
-                            .big_unsigned()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(YakudoScores::NoteId).string().not_null())
+                    .col(ColumnDef::new(YakudoScores::QuoteId).string().not_null())
                     .col(ColumnDef::new(YakudoScores::Score).double().not_null())
                     .col(ColumnDef::new(YakudoScores::Date).timestamp().not_null())
                     .to_owned(),
@@ -49,8 +41,8 @@ enum YakudoScores {
     Table,
     Id,
     Username,
-    TweetId,
-    RetweetId,
+    NoteId,
+    QuoteId,
     Score,
     Date,
 }

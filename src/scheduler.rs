@@ -1,11 +1,14 @@
 use anyhow::Context;
 use chrono::Timelike;
-use egg_mode::tweet::DraftTweet;
+use misskey::{
+    model::{id::Id, note::Note},
+    ClientExt,
+};
 use sea_orm::{prelude::*, QueryOrder};
 use std::{future::Future, ops::Add, pin::Pin, sync::Arc, time::Duration};
 use tokio::time::sleep;
 
-use crate::{database::get_db, entity::yakudo_score, twitter::Twitter};
+use crate::{database::get_db, entity::yakudo_score, misskey::Misskey};
 
 pub struct Job {
     hour: Option<u32>,
@@ -66,30 +69,22 @@ impl Scheduler {
     }
 }
 
-pub async fn start_scheduler(twitter: Arc<Twitter>) -> anyhow::Result<()> {
+pub async fn start_scheduler(misskey: Arc<Misskey>) -> anyhow::Result<()> {
     let mut sched = Scheduler::new();
 
-    let twitter_clone = twitter.clone();
-    sched.add(Job::new(None, 0, move || {
-        let twitter = twitter_clone.clone();
-        Box::pin(async move {
-            log_error(hourly_report(twitter)).await;
-        })
-    }));
-
-    let twitter_clone = twitter.clone();
+    let misskey_clone = misskey.clone();
     sched.add(Job::new(23, 59, move || {
-        let twitter = twitter_clone.clone();
+        let misskey = misskey_clone.clone();
         Box::pin(async move {
-            log_error(daily_report(twitter)).await;
+            log_error(daily_report(misskey)).await;
         })
     }));
 
-    let twitter_clone = twitter;
+    let misskey_clone = misskey;
     sched.add(Job::new(None, 50, move || {
-        let twitter = twitter_clone.clone();
+        let misskey = misskey_clone.clone();
         Box::pin(async move {
-            log_error(destroy_deleted_tweets(twitter)).await;
+            log_error(destroy_deleted_notes(misskey)).await;
         })
     }));
 
@@ -104,107 +99,77 @@ async fn log_error(future: impl std::future::Future<Output = anyhow::Result<()>>
     }
 }
 
-async fn hourly_report(twitter: Arc<Twitter>) -> anyhow::Result<()> {
-    trace!("hourly report started");
-
-    let count = yakudo_score::Entity::find()
-        .filter(yakudo_score::Column::Date.gt(chrono::Local::now().date().and_hms(0, 0, 0)))
-        .count(get_db().await?)
-        .await
-        .context("failed to count yakudos")?;
-
-    trace!("count: {}", count);
-
-    let message = if count == 0 {
-        format!(
-            "おいお前ら!早くyakudoしろ!({})",
-            chrono::Local::now().format("%Y-%m-%d %H:%M")
-        )
-    } else {
-        format!(
-            "本日のyakudo:{}件({})",
-            count,
-            chrono::Local::now().format("%Y-%m-%d %H:%M")
-        )
-    };
-
-    trace!("message: {}", message);
-
-    DraftTweet::new(message)
-        .send(twitter.token())
-        .await
-        .context("failed to send hourly report tweet")?;
-
-    Ok(())
-}
-
-async fn daily_report(twitter: Arc<Twitter>) -> anyhow::Result<()> {
-    trace!("daily report started");
+async fn daily_report(misskey: Arc<Misskey>) -> anyhow::Result<()> {
+    info!("daily report started");
 
     let yakudos = yakudo_score::Entity::find()
-        .filter(yakudo_score::Column::Date.gt(chrono::Local::now().date().and_hms(0, 0, 0)))
+        .filter(
+            yakudo_score::Column::Date.gt(chrono::Local::now().date_naive().and_hms_opt(0, 0, 0)),
+        )
         .order_by_desc(yakudo_score::Column::Score)
         .all(get_db().await?)
         .await
         .context("failed to get yakudos")?;
 
-    trace!("yakudos: {:?}", yakudos);
+    info!("yakudos: {:?}", yakudos);
 
-    let message = if let Some(best_yakudo) = yakudos.first() {
+    if let Some(best_yakudo) = yakudos.first() {
         if best_yakudo.score > 0.0 {
-            format!(
-                "Highest Score:{:.3}\n優勝おめでとう!\nhttps://twitter.com/{}/status/{}",
-                best_yakudo.score, best_yakudo.username, best_yakudo.tweet_id
-            )
+            let message = format!(
+                "Highest Score:{:.3}\n優勝おめでとう!\nhttps://misskey.com/{}/status/{}",
+                best_yakudo.score, best_yakudo.username, best_yakudo.note_id
+            );
+            misskey
+                .quote(best_yakudo.note_id.parse::<Id<Note>>()?, &message)
+                .await?;
+            info!("message: {}", message);
         } else {
-            "おい待てや...今日のyakudo...-inf点しか無いやん...".to_string()
+            let message = "おい待てや...今日のyakudo...-inf点しか無いやん...";
+            misskey.create_note(message).await?;
+            info!("message: {}", message);
         }
     } else {
-        "本日のyakudoは...何一つ...出ませんでした...".to_string()
-    };
-
-    trace!("message: {}", message);
-
-    DraftTweet::new(message)
-        .send(twitter.token())
-        .await
-        .context("failed to send daily report tweet")?;
+        let message = "本日のyakudoは...何一つ...出ませんでした...";
+        misskey.create_note(message).await?;
+        info!("message: {}", message);
+    }
 
     Ok(())
 }
 
-async fn destroy_deleted_tweets(twitter: Arc<Twitter>) -> anyhow::Result<()> {
-    trace!("destroy deleted tweets started");
+async fn destroy_deleted_notes(misskey: Arc<Misskey>) -> anyhow::Result<()> {
+    info!("destroy deleted notes started");
 
     let yakudos = yakudo_score::Entity::find()
-        .filter(yakudo_score::Column::Date.gt(chrono::Local::now().date().and_hms(0, 0, 0)))
+        .filter(
+            yakudo_score::Column::Date.gt(chrono::Local::now().date_naive().and_hms_opt(0, 0, 0)),
+        )
         .all(get_db().await?)
         .await
         .context("failed to get yakudos")?;
 
-    trace!("yakudos: {:?}", yakudos);
+    info!("yakudos: {:?}", yakudos);
 
     for yakudo in yakudos {
-        trace!("checking tweet: {}", yakudo.tweet_id);
+        info!("checking note: {}", yakudo.note_id);
 
-        if egg_mode::tweet::show(yakudo.tweet_id, twitter.token())
-            .await
-            .is_err()
-        {
-            trace!(
-                "failed to get tweet {}. deleting retweet and database record...",
-                yakudo.tweet_id
+        let note_id = yakudo.note_id.parse::<Id<Note>>()?;
+        if misskey.get_note(note_id).await.is_err() {
+            info!(
+                "failed to get note {}. deleting quote and database record...",
+                yakudo.note_id
             );
 
-            egg_mode::tweet::delete(yakudo.retweet_id, twitter.token())
+            misskey
+                .delete_note(note_id)
                 .await
-                .context("failed to delete tweet")?;
+                .context("failed to delete note")?;
             yakudo_score::Entity::delete_by_id(yakudo.id)
                 .exec(get_db().await?)
                 .await
                 .context("failed to delete entity")?;
 
-            trace!("deleted");
+            info!("deleted");
         }
         sleep(Duration::from_secs(1)).await;
     }
