@@ -2,7 +2,7 @@ FROM rust:slim-bullseye AS builder
 
 WORKDIR /app
 COPY . .
-RUN apt update && apt install -y clang libssl-dev libopencv-dev && cargo build --release
+RUN apt update && apt install -y clang libclang-dev libssl-dev libopencv-dev && cargo build --release
 
 FROM debian:bullseye-slim
 COPY --from=builder /app/target/release/yakudobot_rs /usr/local/bin/yakudobot_rs
