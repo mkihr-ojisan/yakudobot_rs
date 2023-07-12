@@ -115,10 +115,7 @@ async fn daily_report(misskey: Arc<Misskey>) -> anyhow::Result<()> {
 
     if let Some(best_yakudo) = yakudos.first() {
         if best_yakudo.score > 0.0 {
-            let message = format!(
-                "Highest Score:{:.3}\n優勝おめでとう!\nhttps://misskey.com/{}/status/{}",
-                best_yakudo.score, best_yakudo.username, best_yakudo.note_id
-            );
+            let message = format!("Highest Score:{:.3}\n優勝おめでとう!", best_yakudo.score);
             misskey
                 .quote(best_yakudo.note_id.parse::<Id<Note>>()?, &message)
                 .await?;
