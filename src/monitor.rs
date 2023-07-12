@@ -61,6 +61,10 @@ async fn process_note(misskey: Arc<Misskey>, note: Note) -> anyhow::Result<()> {
     message.push_str(&chrono::Local::now().format("%Y-%m-%d %H:%M").to_string());
     message.push_str("\nUser:@");
     message.push_str(&note.user.username);
+    if let Some(host) = &note.user.host {
+        message.push('@');
+        message.push_str(host);
+    }
     message.push('\n');
 
     let mut yakudo_score: f64 = 0.0;
