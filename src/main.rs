@@ -7,6 +7,7 @@ extern crate log;
 
 mod database;
 mod entity;
+mod follow;
 mod misskey;
 mod monitor;
 mod scheduler;
@@ -30,8 +31,16 @@ async fn main() {
         error!("failed to start scheduler: {:#}", err);
     }
 
-    if let Err(err) = monitor::monitor_notes(misskey).await {
-        error!("failed to monitor notes: {:#}", err);
+    let misskey_clone = misskey.clone();
+    tokio::spawn(async move {
+        if let Err(err) = monitor::monitor_notes(misskey_clone).await {
+            error!("failed to monitor notes: {:#}", err);
+            std::process::exit(1);
+        }
+    });
+
+    if let Err(err) = follow::monitor_follower(misskey).await {
+        error!("failed to monitor follower: {:#}", err);
         std::process::exit(1);
     }
 }

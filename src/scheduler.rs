@@ -8,7 +8,7 @@ use sea_orm::{prelude::*, QueryOrder};
 use std::{future::Future, ops::Add, pin::Pin, sync::Arc, time::Duration};
 use tokio::time::sleep;
 
-use crate::{database::get_db, entity::yakudo_score, misskey::Misskey};
+use crate::{database::get_db, entity::yakudo_score, follow::follow_followers, misskey::Misskey};
 
 pub struct Job {
     hour: Option<u32>,
@@ -80,11 +80,19 @@ pub async fn start_scheduler(misskey: Arc<Misskey>) -> anyhow::Result<()> {
         })
     }));
 
-    let misskey_clone = misskey;
+    let misskey_clone = misskey.clone();
     sched.add(Job::new(None, 50, move || {
         let misskey = misskey_clone.clone();
         Box::pin(async move {
             log_error(destroy_deleted_notes(misskey)).await;
+        })
+    }));
+
+    let misskey_clone = misskey;
+    sched.add(Job::new(0, 0, move || {
+        let misskey = misskey_clone.clone();
+        Box::pin(async move {
+            log_error(follow_followers(misskey)).await;
         })
     }));
 
